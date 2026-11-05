@@ -119,13 +119,13 @@ def main():
     print(f"\nn{test_lines_1}\n\n\n")
     test_lines_2 = contain_word(my_server, "09/May/2026:00:10:41")
     print(f"\n{test_lines_2}")
-    list = []
-    list.append(test_lines_1)
-    list.append(test_lines_2)
-    print(f"Совокупный список: \n\n{list}")
-    listt = parse_file(list)
+    # list = []
+    # list.append(test_lines_1)
+    # list.append(test_lines_2)
+    # print(f"Совокупный список: \n\n{list}")
+    # listt = parse_file(list)
 
-    show(listt, limit=20)
+    # show(listt, limit=20)
 
 
 if __name__ == "__main__":
