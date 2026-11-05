@@ -1,15 +1,15 @@
 from spy_tools import (
-    read_file,
-    nick,
+    parse_file,
+    nickname,
     action,
     contain_word,
     not_contain_word,
     words,
-    top,
-    plural,
+    top_players,
+    top_targets,
     show,
 )
-from spy_tools import LOG, MY_SERVER
+from spy_tools import LOG, FULL_LOG, MY_SERVER
 
 # ---------- САМО РАССЛЕДОВАНИЕ ----------
 
@@ -100,14 +100,32 @@ def main():
 
 def main():
     print("Привет!")
-    print(f"Печатаю содержание {LOG}...\n\n")
-    file = read_file(LOG)
-    show(file, limit=10)
-    # most_active_player = top(file)
-    player_1 = nick(file[0])
-    print(player_1)
-    print(action(file[0]))
-    top
+    full_log_file = parse_file(FULL_LOG)
+    my_server = contain_word(full_log_file, MY_SERVER)
+    traders_lines = contain_word(my_server, "обмен")
+    speakers_lines = contain_word(my_server, "сказал")
+    gold_lines = contain_word(speakers_lines, "зол")
+    ls_lines = contain_word(my_server, "написал")
+    traders_top_5 = top_players(traders_lines, 5)
+    players_ls_10 = top_targets(ls_lines, 10)
+    speakers_top_20 = top_players(speakers_lines, 20)
+    print(f"\nТоп 5 обменщиков в порядке убывания:\n{traders_top_5}\n\n")
+    print(f"\nТоп 20 говорунов в порядке убывания:\n{speakers_top_20}\n\n")
+    print(f"\nТоп 10 игроков, которым пишут в лс чаще других:\n{players_ls_10}\n\n")
+    # show(my_server, limit=100)
+    # show(traders_top_3, limit=10)
+    show(gold_lines, limit=50)
+    test_lines_1 = contain_word(my_server, "09/May/2026:00:07:07")
+    print(f"\nn{test_lines_1}\n\n\n")
+    test_lines_2 = contain_word(my_server, "09/May/2026:00:10:41")
+    print(f"\n{test_lines_2}")
+    list = []
+    list.append(test_lines_1)
+    list.append(test_lines_2)
+    print(f"Совокупный список: \n\n{list}")
+    listt = parse_file(list)
+
+    show(listt, limit=20)
 
 
 if __name__ == "__main__":

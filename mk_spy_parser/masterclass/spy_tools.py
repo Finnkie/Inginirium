@@ -1,41 +1,27 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""Детектив «Найди шпиона» — версия на фильтрах, как в терминале Linux.
 
-Мы делаем ровно то же, что делали бы руками в терминале:
+# python3 ../../log/generate_log.py --lines 1100000 --seed 42
 
-    cat game_server.log | egrep "сказал" | egrep "золот"
-
-Только вместо команд терминала — такие же простые функции Python.
-Каждая функция берёт список строк и возвращает список строк,
-поэтому их можно соединять в цепочку — как команды через |.
-
-    cat(ЛОГ)                 все строки файла            = cat
-    egrep(строки, "слово")   оставить строки со словом   = egrep -F "слово"
-    egrep_v(строки, "слово") убрать строки со словом     = egrep -v "слово"
-    words(строка)            разрезать строку на слова   = tr ' ' '\\n'
-    nick(строка)             достать ник игрока
-    action(строка)           достать действие игрока
-    in_quotes(строка)        достать цель и сообщение (умный split — shlex)
-    top(строки, N)           топ игроков по числу строк  = sort | uniq -c | sort -rn | head
-
-Примечание для ведущего: в настоящем egrep квадратные скобки — спецсимволы,
-поэтому egrep "Голд[Мир]" в терминале сработал бы хитро. Наш «egrep» ищет
-подстроку как есть — это эквивалент egrep -F "Голд[Мир]".
-"""
-
+import os
 import shlex
 from collections import Counter
 
 
-LOG = "game_server.log"  # большой лог для финала: "game_server_full.log"
-MY_SERVER = "Голд[Мир]"  # у каждого ученика свой сервер и свой злодей
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG = os.path.join(
+    BASE_DIR, "game_server.log"
+)  # сэмпл на 1000 строк - им работаем на уроке
+FULL_LOG = os.path.normpath(
+    os.path.join(BASE_DIR, "..", "..", "log", "game_server_full.log")
+)
+
+MY_SERVER = "Рил[Мир]"  # у каждого детектива свой сервер
 
 
 # ---------- ФИЛЬТРЫ: список строк -> список строк ----------
 
 
-def read_file(path):
+def parse_file(path):
     """cat файл — прочитать лог целиком и вернуть список строк."""
     result = []
     for line in open(path, encoding="utf-8"):
@@ -43,19 +29,19 @@ def read_file(path):
     return result
 
 
-def contain_word(lines, word):
+def contain_word(input_lines, word):
     """egrep "слово" — оставить только строки, где это слово есть."""
     result = []
-    for line in lines:
+    for line in input_lines:
         if word in line:
             result.append(line)
     return result
 
 
-def not_contain_word(lines, word):
+def not_contain_word(input_lines, word):
     """egrep -v "слово" — наоборот: убрать строки, где слово есть."""
     result = []
-    for line in lines:
+    for line in input_lines:
         if word not in line:
             result.append(line)
     return result
@@ -76,9 +62,14 @@ def words(line):
 # action = words(line)[4]
 
 
-def nick(line):
+def nickname(line):
     # Ник игрока — слово с номером 3 (считаем с нуля!). Вместе со скобками: <ДобрыйЖук>.
     return words(line)[3]
+
+
+def target(line):
+    # Имя цели
+    return words(line)[5]
 
 
 def action(line):
@@ -99,16 +90,20 @@ def in_quotes(line):
 # ---------- ПОДСЧЁТЫ ----------
 
 
-def top(lines, how_many):
-    """Кто сколько раз попался в строках: топ-N игроков.
-
-    Как: ... | sort | uniq -c | sort -rn | head -N
-    Counter — счётчик из библиотеки collections: сам всё считает.
-    """
+def top_players(input_lines, top_of_how_many):
+    # Наибольшее кол-во упоминаний игрока
     counter = Counter()
-    for line in lines:
-        counter[nick(line)] += 1
-    return counter.most_common(how_many)
+    for line in input_lines:
+        counter[nickname(line)] += 1
+    return counter.most_common(top_of_how_many)
+
+
+def top_targets(input_lines, top_of_how_many):
+    # Наибольшее кол-во упоминаний игрока
+    counter = Counter()
+    for line in input_lines:
+        counter[target(line)] += 1
+    return counter.most_common(top_of_how_many)
 
 
 def dance_then_love(lines):
@@ -121,18 +116,18 @@ def dance_then_love(lines):
         if (
             action(this_line) == "станцевал"
             and action(next_line) == "признался_в_любви"
-            and nick(this_line) == nick(next_line)
+            and nickname(this_line) == nickname(next_line)
         ):
             found.append(this_line)
             found.append(next_line)
     return found
 
 
-def show(lines, limit=10):
+def show(input_lines, limit=10):
     """Показать, что осталось после фильтров — как вывод команды в терминале."""
-    for line in lines[:limit]:
+    for line in input_lines[:limit]:
         print("  " + line)
-    print(f"Всего строк в файле: {len(lines)}")
+    print(f"Всего строк на входе (в input): {len(input_lines)}")
 
 
 def plural(count):
