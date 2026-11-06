@@ -3,8 +3,10 @@ from spy_tools import (
     nickname,
     action,
     contain_word,
+    contain_list_of_words,
     not_contain_word,
     words,
+    target,
     top_players,
     top_targets,
     show,
@@ -13,119 +15,46 @@ from spy_tools import LOG, FULL_LOG, MY_SERVER
 
 # ---------- САМО РАССЛЕДОВАНИЕ ----------
 
-"""
-def main():
-    all_lines = read_file(LOG)
-    print(f"cat {LOG}: в логе {len(all_lines)} строк. Глазами столько не прочитать!\n")
-
-    # ШАГ 0. Фильтр сервера: у каждого ученика свой сервер и свой злодей.
-    # Работаем дальше только со строками СВОЕГО сервера.
-    print("=== Шаг 0. Учимся фильтровать ===")
-    lines = contain_word(all_lines, MY_SERVER)
-    show(lines, f'cat {LOG} | egrep "{MY_SERVER}"', limit=5)
-    print()
-
-    # РАЗМИНКА 1. Кто больше всех танцует?
-    print("=== Разминка 1. Кто больше всех станцевал? ===")
-    dances = contain_word(lines, "станцевал")
-    print(
-        f'$ cat {LOG} | egrep "{MY_SERVER}" | egrep "станцевал" | sort | uniq -c | sort -rn | head -3'
-    )
-    for player, count in top(dances, 3):
-        print(f"  {player} — станцевал {count} {plural(count)}")
-
-    # РАЗМИНКА 2. Потанцевал и сразу признался в любви
-    print("\n=== Разминка 2. Станцевал и СРАЗУ признался в любви? ===")
-    for line in dance_then_love(lines):
-        print("  " + line)
-
-    # ШАГ 1. Кто ВСЛУХ говорит про золото
-    print("\n=== Шаг 1. Кто вслух говорит про золото? ===")
-    shouts = contain_word(lines, "сказал")  # пока только то, что сказано вслух
-    shouts = contain_word(shouts, "золот")  # и среди этого — всё про золото
-    show(
-        shouts,
-        f'cat {LOG} | egrep "{MY_SERVER}" | egrep "сказал" | egrep "золот"',
-        limit=8,
-    )
-    print("\nТоп-5 болтунов про золото (подозреваемые):")
-    suspects = top(shouts, 5)
-    print(suspects)
-    # for player, count in suspects:
-    #    print(f"  {player}: {count} {plural(count)}")
-
-    # ШАГ 2. Проверка подозреваемых: настоящему продавцу пишут в ЛС
-    # и с ним делают обмен. Клянчащему игроку — не пишут и не меняются!
-    print("\n=== Шаг 2. Настоящему шпиону пишут в ЛС и делают с ним обмен ===")
-    private = contain_word(lines, "написал_в_лс")
-    trades = contain_word(lines, "обмен")
-    spy = ""
-    best_score = 0
-    for player, _times in suspects:
-        letters = []  # письма ЕМУ: он стоит в поле цели
-        for line in private:
-            if words(line)[10] == player:
-                letters.append(line)
-        deals = contain_word(trades, player)  # он сам меняет ИЛИ с ним меняются
-        score = len(letters) + len(deals)
-        print(
-            f"  {player}: писем ему {len(letters)}, обменов {len(deals)} -> очки: {score}"
-        )
-        if score > best_score:
-            spy = player
-            best_score = score
-
-    # ШАГ 3. Разоблачение: достаём из лога ВСЕ строки шпиона разом
-    print(f"\n=== Шаг 3. Разоблачение! Шпион: {spy} ===")
-    evidence = contain_word(lines, spy)
-    show(evidence, f'cat {LOG} | egrep "{MY_SERVER}" | egrep "{spy}"', limit=10)
-
-    # ОТЧЁТ: сервер шпиона, кто ему писал и куда он звал платить
-    print("\n=== ОТЧЁТ КОНТРРАЗВЕДКИ ===")
-    server = words(evidence[0])[4]
-    buyer = ""
-    site = ""
-    for line in evidence:
-        if action(line) == "написал_в_лс" and nick(line) == spy:
-            parts = in_quotes(line)
-            buyer = parts[0]  # кому он ответил — тот и покупатель
-            message = parts[1]
-            if ".рф" in message:
-                site = message.split(",")[0]  # адрес сайта — до первой запятой
-    print(f"  Шпион:      {spy} (сервер {server})")
-    print(f"  Покупатель: {buyer}")
-    print(f"  Сайт:       {site}")
-"""
-
 
 def main():
     print("Привет!")
     full_log_file = parse_file(FULL_LOG)
     my_server = contain_word(full_log_file, MY_SERVER)
-    traders_lines = contain_word(my_server, "обмен")
-    speakers_lines = contain_word(my_server, "сказал")
-    gold_lines = contain_word(speakers_lines, "зол")
-    ls_lines = contain_word(my_server, "написал")
-    traders_top_5 = top_players(traders_lines, 5)
-    players_ls_10 = top_targets(ls_lines, 10)
-    speakers_top_20 = top_players(speakers_lines, 20)
-    print(f"\nТоп 5 обменщиков в порядке убывания:\n{traders_top_5}\n\n")
-    print(f"\nТоп 20 говорунов в порядке убывания:\n{speakers_top_20}\n\n")
-    print(f"\nТоп 10 игроков, которым пишут в лс чаще других:\n{players_ls_10}\n\n")
-    # show(my_server, limit=100)
-    # show(traders_top_3, limit=10)
-    show(gold_lines, limit=50)
-    test_lines_1 = contain_word(my_server, "09/May/2026:00:07:07")
-    print(f"\nn{test_lines_1}\n\n\n")
-    test_lines_2 = contain_word(my_server, "09/May/2026:00:10:41")
-    print(f"\n{test_lines_2}")
-    # list = []
-    # list.append(test_lines_1)
-    # list.append(test_lines_2)
-    # print(f"Совокупный список: \n\n{list}")
-    # listt = parse_file(list)
+    #  ПУНКТ 1
+    capitals_lines = contain_word(my_server, "столица")
+    cities_lines = contain_word(my_server, "город")
+    list_capitals_cities = capitals_lines + cities_lines
 
-    # show(listt, limit=20)
+    show(list_capitals_cities, limit=50)
+    gold_words = ["голда", "золот", "злато", "деньг", "прод"]
+    gold_speakers = contain_list_of_words(
+        contain_word(list_capitals_cities, "сказал"), gold_words
+    )
+    show(gold_speakers, limit=50)
+
+    #  ПУНКТ 2 Вывод - Продавец шифруется. Сложный случай.
+
+    print("\n\n\n")
+
+    trade_actions = contain_word(list_capitals_cities, "обмен")
+    top_10_traders = top_players(trade_actions, 10)
+    result_traders = "\n".join(str(item) for item in top_10_traders)
+    print(f"\nСтатистика по топ 10 обменивающихся игроков:\n{result_traders}")
+
+    print("\n\n\n")
+
+    ls_actions = contain_word(list_capitals_cities, "написал_в_лс")
+    top_10_ls_targets = top_targets(ls_actions, 10)
+    result_ls_players = "\n".join(str(item) for item in top_10_ls_targets)
+    print(f"\nСтатистика по топ 10 игроков-адресатов сообщений:\n{result_ls_players}")
+
+    PT = contain_word(ls_actions, "СерёгаСпекулянт")
+    print(PT)
+    PT_parsed = []
+    for line in PT:
+        if target(line) == "<СерёгаСпекулянт>":
+            PT_parsed.append(line)
+    show(PT_parsed, limit=4500)
 
 
 if __name__ == "__main__":

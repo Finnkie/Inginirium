@@ -15,14 +15,13 @@ FULL_LOG = os.path.normpath(
     os.path.join(BASE_DIR, "..", "..", "log", "game_server_full.log")
 )
 
-MY_SERVER = "Рил[Мир]"  # у каждого детектива свой сервер
+MY_SERVER = "Просто[Мир]"  # у каждого детектива свой сервер
 
 
 # ---------- ФИЛЬТРЫ: список строк -> список строк ----------
 
 
 def parse_file(path):
-    """cat файл — прочитать лог целиком и вернуть список строк."""
     result = []
     for line in open(path, encoding="utf-8"):
         result.append(line.strip())
@@ -30,7 +29,6 @@ def parse_file(path):
 
 
 def contain_word(input_lines, word):
-    """egrep "слово" — оставить только строки, где это слово есть."""
     result = []
     for line in input_lines:
         if word in line:
@@ -38,8 +36,18 @@ def contain_word(input_lines, word):
     return result
 
 
+def contain_list_of_words(input_lines, list_of_words):
+    result = []
+    for line in input_lines:
+        for word in list_of_words:
+            if word in line:
+                result.append(line)
+            else:
+                continue
+    return result
+
+
 def not_contain_word(input_lines, word):
-    """egrep -v "слово" — наоборот: убрать строки, где слово есть."""
     result = []
     for line in input_lines:
         if word not in line:
