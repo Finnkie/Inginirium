@@ -15,7 +15,7 @@ FULL_LOG = os.path.normpath(
     os.path.join(BASE_DIR, "..", "..", "log", "game_server_full.log")
 )
 
-MY_SERVER = "Просто[Мир]"  # у каждого детектива свой сервер
+MY_SERVER = "Алмаз[Мир]"  # у каждого детектива свой сервер
 
 
 # ---------- ФИЛЬТРЫ: список строк -> список строк ----------
@@ -36,22 +36,20 @@ def contain_word(input_lines, word):
     return result
 
 
-def contain_list_of_words(input_lines, list_of_words):
-    result = []
-    for line in input_lines:
-        for word in list_of_words:
-            if word in line:
-                result.append(line)
-            else:
-                continue
-    return result
-
-
 def not_contain_word(input_lines, word):
     result = []
     for line in input_lines:
         if word not in line:
             result.append(line)
+    return result
+
+
+def contain_list_of_words(input_lines, words):
+    result = []
+    for line in input_lines:
+        for word in words:
+            if word in line:
+                result.append(line)
     return result
 
 
@@ -76,23 +74,12 @@ def nickname(line):
 
 
 def target(line):
-    # Имя цели
     return words(line)[5]
 
 
 def action(line):
     # Действие игрока — слово с номером 9. Кавычки снимаем: "сказал" -> сказал.
     return words(line)[4].strip('"')
-
-
-"""
-def in_quotes(line):
-    # Достать из строки цель и сообщение (всё, что после действия).
-    # shlex.split — «умный split» из библиотеки shlex:
-    # понимает кавычки и сам убирает их.
-    tail = " ".join(words(line)[10:])
-    return shlex.split(tail)
-"""
 
 
 # ---------- ПОДСЧЁТЫ ----------
@@ -112,23 +99,6 @@ def top_targets(input_lines, top_of_how_many):
     for line in input_lines:
         counter[target(line)] += 1
     return counter.most_common(top_of_how_many)
-
-
-def dance_then_love(lines):
-    """Найти ДВЕ строки подряд: станцевал и тут же признался_в_любви
-    (и оба раза — один и тот же игрок)."""
-    found = []
-    for i in range(len(lines) - 1):
-        this_line = lines[i]
-        next_line = lines[i + 1]
-        if (
-            action(this_line) == "станцевал"
-            and action(next_line) == "признался_в_любви"
-            and nickname(this_line) == nickname(next_line)
-        ):
-            found.append(this_line)
-            found.append(next_line)
-    return found
 
 
 def show(input_lines, limit=10):
