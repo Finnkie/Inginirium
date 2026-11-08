@@ -1,31 +1,15 @@
-from classes import Phone, Student, StudentNew
+import pygame as pg
+import numpy as np
 
 
 def main():
-    my_phone = Phone()
-    print(my_phone.color)
-    print(my_phone.battery)
-    my_phone.take_photo()
-    print(my_phone.battery)
+    pg.init()
 
-    my_student = Student(grades=[])  # а правильно:   my_student = Student(grades=[])
-    my_student.add_grade(3)
-    my_student.add_grade(5)
-    a = my_student.get_average()
-    print(a)
-    my_student.add_grade(4)
-    my_student.add_grade(3)
-    my_student.add_grade(5)
-    a = my_student.get_average()
-    print(a)
-
-    # Студент_new
-    my_student = StudentNew()
-    my_student.add_grade(4)
-    my_student.add_grade(3)
-    my_student.add_grade(6)
-    a = my_student.get_average()
-    print(a)
+    screen = pg.display.set_mode((800, 600))
+    while True:
+        for event in pg.event.get():
+            if event.type == pg.QUIT:
+                pg.quit()
 
 
 if __name__ == "__main__":
