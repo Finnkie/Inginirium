@@ -1,31 +1,29 @@
-import pygame as pg
 import random
+import sqlite3
+from datetime import datetime
 
-# Масштаб Персонажа:
-SCALE = 0.6
-R = int(50 * SCALE)  # размер Персонажа (радиус)
+import pygame as pg
 
-WALL_COLOR = (170, 120, 70)  # стены и границы в RGB
-FLOOR_COLOR = (220, 220, 220)  # пол в RGB
-PLAYER_COLOR = (60, 130, 60)  # Персонаж-солтат в RGB
-
-FIELD_LEFT = 43  # внутренний край левой стены
-FIELD_TOP = 43  # внутренний край верхней стены
-CELL_SIZE = 71  # размер клетки: в 2 раза уже старой (проход 65 > диаметра 60)
-CELLS_COUNT = 14  # клеток по каждой стороне: 14 x 14 - лабиринт крупнее и хитрее
-
-GAME_TIMER = 60  # длительность раунда
-
-# Блок стены: длина стандартного куска и стандартная ширина прохода.
-BLOCK = 76
-
-BULLET_SPEED = 8  # скорость пули: пикселей за кадр
-DIRECTION_VECTORS = {
-    "right": (1, 0),
-    "left": (-1, 0),
-    "up": (0, -1),
-    "down": (0, 1),
-}
+# импорт констант настроек и визуального стиля
+from settings import (
+    BLACK,
+    BLOCK,
+    BULLET_SPEED,
+    CELL_SIZE,
+    CELLS_COUNT,
+    DB_FILE,
+    DIRECTION_KEYS,
+    DIRECTION_VECTORS,
+    FIELD_LEFT,
+    FIELD_TOP,
+    FLOOR_COLOR,
+    GAME_TIMER,
+    METAL_COLOR,
+    PLAYER_COLOR,
+    R,
+    SCALE,
+    WALL_COLOR,
+)
 
 
 # Куда показывает персонаж? Отрисовка относительно направления движения:
@@ -63,86 +61,13 @@ def eye_center(player_x, player_y, direction, dx, dy):
     return (player_x + dy, player_y + dx)
 
 
-def build_walls(rng):
-    """Границы арены + лабиринт, построенный алгоритмом «случайного обхода».
-
-    Обходчик блуждает по клеткам 7x7 и прокладывает проходы между ними;
-    между клетками, которые он НЕ связал, ставится стена. Получается
-    случайно сгенерированный лабиринт с тупиками, где все клетки карты
-    можно обойти.
-    Потом несколько лишних стен убирается - появляются петли-обходы.
-    Все стены нарублены на куски длиной около радиуса Персонажа.
-    """
-    walls = [
-        pg.Rect(35, 35, 8, 1010),  # левая граница
-        pg.Rect(35, 35, 1010, 8),  # верхняя граница
-        pg.Rect(35, 1037, 1010, 8),  # нижняя граница
-        pg.Rect(1037, 35, 8, 1010),  # правая граница
-    ]
-
-    # 1. Случайный обход: связывает ВСЕ клетки в одно целое
-    linked = {(c, r): set() for c in range(CELLS_COUNT) for r in range(CELLS_COUNT)}
-    visited = {(0, 0)}
-    stack = [(0, 0)]
-    while stack:
-        c, r = stack[-1]
-        neighbours = [
-            (nc, nr)
-            for nc, nr in ((c + 1, r), (c - 1, r), (c, r + 1), (c, r - 1))
-            if 0 <= nc < CELLS_COUNT
-            and 0 <= nr < CELLS_COUNT
-            and (nc, nr) not in visited
-        ]
-        if not neighbours:
-            stack.pop()  # тупик - отходим назад и пробуем другие пути
-            continue
-        nxt = rng.choice(neighbours)
-        linked[(c, r)].add(nxt)
-        linked[nxt].add((c, r))
-        visited.add(nxt)
-        stack.append(nxt)
-
-    # 2. Петли: убираются несколько случайных стен - появляются обходные пути
-    for _ in range(6):
-        c, r = rng.randrange(CELLS_COUNT), rng.randrange(CELLS_COUNT)
-        choices = [
-            (nc, nr)
-            for nc, nr in ((c + 1, r), (c - 1, r), (c, r + 1), (c, r - 1))
-            if 0 <= nc < CELLS_COUNT
-            and 0 <= nr < CELLS_COUNT
-            and (nc, nr) not in linked[(c, r)]
-        ]
-        if choices:
-            nxt = rng.choice(choices)
-            linked[(c, r)].add(nxt)
-            linked[nxt].add((c, r))
-
-    # 3. Ставим стены там, где клетки НЕ связаны; рубим на блоки длиной BLOCK
-    def chop(x, y, w, h):
-        if w >= h:  # горизонтальная: рубим по длине
-            x0 = x
-            while x0 < x + w:
-                seg = min(BLOCK, x + w - x0)
-                walls.append(pg.Rect(x0, y, seg, h))
-                x0 += BLOCK
-        else:  # вертикальная: рубим по высоте
-            y0 = y
-            while y0 < y + h:
-                seg = min(BLOCK, y + h - y0)
-                walls.append(pg.Rect(x, y0, w, seg))
-                y0 += BLOCK
-
-    for c in range(CELLS_COUNT):
-        for r in range(CELLS_COUNT):
-            # вертикальная стена справа от клетки (c, r)?
-            if c + 1 < CELLS_COUNT and (c + 1, r) not in linked[(c, r)]:
-                x = FIELD_LEFT + (c + 1) * CELL_SIZE
-                chop(x - 4, FIELD_TOP + r * CELL_SIZE, 8, CELL_SIZE)
-            # горизонтальная стена снизу от клетки (c, r)?
-            if r + 1 < CELLS_COUNT and (c, r + 1) not in linked[(c, r)]:
-                y = FIELD_TOP + (r + 1) * CELL_SIZE
-                chop(FIELD_LEFT + c * CELL_SIZE, y - 4, CELL_SIZE, 8)
-    return walls
+def player_cell(player_x, player_y):
+    """В какой клетке лабиринта стоит солдат."""
+    col = int((player_x - FIELD_LEFT) // CELL_SIZE)
+    row = int((player_y - FIELD_TOP) // CELL_SIZE)
+    col = max(0, min(CELLS_COUNT - 1, col))
+    row = max(0, min(CELLS_COUNT - 1, row))
+    return (col, row)
 
 
 def random_cell(rng, not_cell=None):
@@ -162,153 +87,75 @@ def cell_center(cell):
     )
 
 
-def player_cell(player_x, player_y):
-    """В какой клетке лабиринта стоит солдат."""
-    col = int((player_x - FIELD_LEFT) // CELL_SIZE)
-    row = int((player_y - FIELD_TOP) // CELL_SIZE)
-    col = max(0, min(CELLS_COUNT - 1, col))
-    row = max(0, min(CELLS_COUNT - 1, row))
-    return (col, row)
+class Soldier:
+    """Главный герой: позиция, направление взгляда, очки и патроны.
+    Умеет ходить (без диагоналей), стрелять и рисовать себя."""
 
+    SPEED = 3  # стартовая скорость: шаг за кадр
 
-def draw_chest(screen, cx, cy):
-    """Оружейный сундук: тёмно-коричневое тело, крышка с частыми досками,
-    редкие линии на теле, золотой замок ближе к крышке по центру."""
-    body = (110, 70, 35)
-    black = (20, 20, 20)
-    gold = (218, 165, 32)
-    # тело ящика
-    pg.draw.rect(screen, body, (cx - 30, cy - 4, 60, 30))
-    # редкие поперечные линии на теле
-    for i in range(1, 4):
-        pg.draw.rect(screen, black, (cx - 30 + i * 15, cy - 4, 2, 30))
-    pg.draw.rect(screen, body, (cx - 30, cy - 18, 60, 14))
-    # доски на крышке сундука
-    for i in range(1, 11):
-        pg.draw.rect(screen, black, (int(cx - 30 + i * 60 / 11) - 1, cy - 18, 2, 14))
-    pg.draw.rect(screen, black, (cx - 30, cy - 5, 60, 4))
-    # золотой замок на ящике
-    pg.draw.rect(screen, gold, (cx - 7, cy - 6, 14, 12))
-    # чёрный контур вокруг всего сундука, толщина - как у разделителя
-    pg.draw.rect(screen, black, (cx - 30, cy - 18, 60, 44), width=4)
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.direction = "right"  # "right", "left", "up", "down"
+        self.score = 0
+        self.ammo = 1  # патроны: изначально один
+        self.speed = self.SPEED  # скорость растёт с каждым сундуком
 
+    def cell(self):
+        """Клетка лабиринта, в которой стоит солдат."""
+        return player_cell(self.x, self.y)
 
-def main():
-    pg.init()
+    def tick(self, keys):
+        """ЗАЖАТЫЕ клавиши. elif вместо if: сработает только ПЕРВАЯ зажатая
+        клавиша из списка - диагональное движение невозможно."""
+        if keys[pg.K_LEFT]:
+            self.x -= self.speed
+            self.direction = "left"
+        elif keys[pg.K_RIGHT]:
+            self.x += self.speed
+            self.direction = "right"
+        elif keys[pg.K_UP]:
+            self.y -= self.speed
+            self.direction = "up"
+        elif keys[pg.K_DOWN]:
+            self.y += self.speed
+            self.direction = "down"
 
-    screen = pg.display.set_mode((1080, 1080))
-    rng = random.Random()
-    font = pg.font.Font(None, 56)
-    big_font = pg.font.Font(None, 96)
+    def handle_tap(self, event, keys):
+        """ОДИНОЧНОЕ нажатие стрелки: засчитывается, только если ни одна
+        кнопка движения не зажата - иначе вышел бы шаг по диагонали."""
+        if event.key not in (pg.K_LEFT, pg.K_RIGHT, pg.K_UP, pg.K_DOWN):
+            return
+        something_held = (
+            keys[pg.K_LEFT] or keys[pg.K_RIGHT] or keys[pg.K_UP] or keys[pg.K_DOWN]
+        )
+        if something_held:
+            return
+        dx, dy = DIRECTION_VECTORS[DIRECTION_KEYS[event.key]]
+        self.x += dx * self.speed
+        self.y += dy * self.speed
+        self.direction = DIRECTION_KEYS[event.key]
 
-    walls = build_walls(rng)
-    metal_walls = []  # противоударные заплатки: пулей не разбиваются до конца игры
-    holes = []  # дыры от пуль - при подборе сундука заливаются металлом
+    def speed_up(self):
+        """Сундук подбран - солдат бегает чуть быстрее (+0.25 px за кадр)."""
+        self.speed += 0.25
 
-    # солдат появляется в верхнем левом углу (центр клетки (0, 0)) и
-    # смотрит вправо
-    player_x, player_y = cell_center((0, 0))
-    direction = "right"  # "right", "left", "up", "down"
-    score = 0
-    ammo = 1  # патроны: изначально один
-    bullets = []  # летящие пули: [x, y, vx, vy]
+    def shoot(self):
+        """Выстрел: тратит патрон и возвращает пулю из конца ствола.
+        Пуля появляется от КРАЯ ТЕЛА (R) - коллизия гарантирует, что стена
+        не бывает ближе R к центру, значит сквозь неё пуля не родится."""
+        if self.ammo <= 0:
+            return None
+        self.ammo -= 1
+        vx, vy = DIRECTION_VECTORS[self.direction]
+        return Bullet(self.x + vx * R, self.y + vy * R, vx, vy)
 
-    # первый сундук - в случайной клетке, но не там, где стоит солдат
-    chest_cell = random_cell(rng, not_cell=player_cell(player_x, player_y))
-    chest_x, chest_y = cell_center(chest_cell)
+    def gain_ammo(self):
+        """Каждый сундук даёт случайно от 1 до 3 патронов."""
+        self.ammo += random.randint(1, 3)
 
-    clock = pg.time.Clock()
-    game_over = False
-    last_ticks = pg.time.get_ticks()
-    time_left = float(GAME_TIMER)  # таймер хранит дробные секунды
-    while True:
-        keys = pg.key.get_pressed()
-        for event in pg.event.get():
-            if event.type == pg.QUIT:
-                pg.quit()
-                return  # выход из main()
-            # после конца игры ESC тоже закрывает
-            if game_over and event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE:
-                pg.quit()
-                return
-
-            # ВЫСТРЕЛ: одиночный пробел, тратит патрон, пуля летит по взгляду
-            # (стрелять можно и на бегу - пробел не блокируется зажатыми стрелками)
-            if not game_over and event.type == pg.KEYDOWN and event.key == pg.K_SPACE:
-                if ammo > 0:
-                    ammo -= 1
-                    vx, vy = DIRECTION_VECTORS[direction]
-                    # пуля появляется от КРАЯ ТЕЛА Персонажа (R)
-                    bullets.append([player_x + vx * R, player_y + vy * R, vx, vy])
-
-            # Засчитывается только одиночное НАЖАТИЕ (и только в игре)
-            if not game_over and event.type == pg.KEYDOWN:
-                something_held = (
-                    keys[pg.K_LEFT]
-                    or keys[pg.K_RIGHT]
-                    or keys[pg.K_UP]
-                    or keys[pg.K_DOWN]
-                )
-                if not something_held:
-                    if event.key == pg.K_LEFT:
-                        player_x -= 3
-                        direction = "left"
-                    elif event.key == pg.K_RIGHT:
-                        player_x += 3
-                        direction = "right"
-                    elif event.key == pg.K_UP:
-                        player_y -= 3
-                        direction = "up"
-                    elif event.key == pg.K_DOWN:
-                        player_y += 3
-                        direction = "down"
-
-        # ТАЙМЕР: 60 секунд, тикают вниз дробями; сундуки добавляют 1-3 секунды
-        now = pg.time.get_ticks()
-        time_left -= (now - last_ticks) / 1000
-        last_ticks = now
-        seconds_left = max(0, int(time_left))
-        if time_left <= 0:
-            game_over = True
-
-        if game_over:
-            # ЭКРАН РЕЗУЛЬТАТА
-            screen.fill((40, 40, 60))
-            t1 = big_font.render("ВРЕМЯ ВЫШЛО!", True, (240, 220, 120))
-            t2 = font.render(f"Собрано сундуков: {score}", True, (240, 240, 240))
-            t3 = font.render("Нажми ESC или закрой окно", True, (180, 180, 180))
-            screen.blit(t1, (screen.get_width() // 2 - t1.get_width() // 2, 380))
-            screen.blit(t2, (screen.get_width() // 2 - t2.get_width() // 2, 520))
-            screen.blit(t3, (screen.get_width() // 2 - t3.get_width() // 2, 620))
-            pg.display.flip()
-            clock.tick(60)
-            continue
-
-        screen.fill(FLOOR_COLOR)
-
-        # стены: границы + лабиринт
-        for wall in walls:
-            pg.draw.rect(screen, WALL_COLOR, wall)
-
-        # МЕТАЛЛИЧЕСКИЕ ЗАПЛАТКИ: тёмно-серые с чёрными полосками поперёк
-        for wall in metal_walls:
-            pg.draw.rect(screen, (90, 90, 95), wall)
-            if wall.w >= wall.h:
-                for sx in range(wall.left + 5, wall.right - 2, 12):
-                    pg.draw.rect(
-                        screen, (20, 20, 20), (sx, wall.top + 1, 2, wall.h - 2)
-                    )
-            else:
-                for sy in range(wall.top + 5, wall.bottom - 2, 12):
-                    pg.draw.rect(
-                        screen, (20, 20, 20), (wall.left + 1, sy, wall.w - 2, 2)
-                    )
-
-        # сундук
-        draw_chest(screen, chest_x, chest_y)
-
-        # Персонаж: СОЛДАТ (тёмно-зелёный)
-        pg.draw.circle(screen, PLAYER_COLOR, (player_x, player_y), R)
+    def draw(self, screen):
+        pg.draw.circle(screen, PLAYER_COLOR, (self.x, self.y), R)
 
         # ПРИЧЁСКА: 5 прядей, каждая вылезает за круг на 12 пикселей.
         hair = []
@@ -320,130 +167,481 @@ def main():
             hair.append((strand_from, hair_dy, strand_to - strand_from, 3))
         for dx, dy, w, h in hair:
             pg.draw.rect(
-                screen,
-                (20, 20, 20),
-                directed(player_x, player_y, direction, dx, dy, w, h),
+                screen, BLACK, directed(self.x, self.y, self.direction, dx, dy, w, h)
             )
 
         pg.draw.circle(
-            screen, (20, 20, 20), eye_center(player_x, player_y, direction, 20, -15), 4
+            screen, BLACK, eye_center(self.x, self.y, self.direction, 20, -15), 4
         )  # глаз
         pg.draw.rect(
-            screen, (20, 20, 20), directed(player_x, player_y, direction, 3, -30, 35, 6)
+            screen, BLACK, directed(self.x, self.y, self.direction, 3, -30, 35, 6)
         )  # бровь
         pg.draw.rect(
             screen,
             (60, 60, 70),
-            directed(player_x, player_y, direction, 35, -10, 45, 20),
+            directed(self.x, self.y, self.direction, 35, -10, 45, 20),
         )  # ствол
         pg.draw.rect(
             screen,
             (60, 60, 70),
-            directed(player_x, player_y, direction, 35, -10, 17, 32),
+            directed(self.x, self.y, self.direction, 35, -10, 17, 32),
         )  # рукоять
+
+
+class Bullet:
+    """Пуля: летит прямолинейно, проверяется квадратиком 8x8. Его размер
+    равен скорости полёта, поэтому зоны проверки соседних кадров стыкуются
+    вплотную - пуля не может перепрыгнуть стену толщиной 8."""
+
+    HITBOX = 8
+
+    def __init__(self, x, y, vx, vy):
+        self.x = x
+        self.y = y
+        self.vx = vx
+        self.vy = vy
+
+    def update(self):
+        self.x += self.vx * BULLET_SPEED
+        self.y += self.vy * BULLET_SPEED
+
+    @property
+    def rect(self):
+        return pg.Rect(self.x - 4, self.y - 4, Bullet.HITBOX, Bullet.HITBOX)
+
+    def off_screen(self, width, height):
+        return (
+            self.rect.right < 0
+            or self.rect.left > width
+            or self.rect.bottom < 0
+            or self.rect.top > height
+        )
+
+    def draw(self, screen):
+        bx, by = int(self.x), int(self.y)
+        pg.draw.circle(screen, BLACK, (bx, by), 8)  # чёрный контур
+        pg.draw.circle(screen, (130, 130, 130), (bx, by), 6)  # серый шарик
+        pg.draw.circle(screen, (175, 175, 175), (bx - 2, by - 2), 3)  # светлый блик
+
+
+class WallBlock:
+    """Один блок стены.
+    material "border": граница арены - неразрушима;
+    material "wood":   разбивается с одного выстрела; при ремонте
+                       лабиринта возвращается МЕТАЛЛИЧЕСКИМ;
+    material "metal":  держит ДВА выстрела (после первого покрывается
+                       трещинами); разбитый металл при ремонте
+                       НЕ возрождается - дыра остаётся навсегда.
+    """
+
+    HP_BY_MATERIAL = {"wood": 1, "metal": 2}
+
+    def __init__(self, rect, material):
+        self.rect = rect
+        self.material = material
+        self.hp = self.HP_BY_MATERIAL.get(material, 9999)
+
+    def hit(self):
+        """Выстрел в блок. Возвращает True, если блок разрушен."""
+        if self.material == "border":
+            return False  # граница держит сколько угодно выстрелов
+        self.hp -= 1
+        return self.hp <= 0
+
+    def draw(self, screen):
+        if self.material == "metal":
+            pg.draw.rect(screen, METAL_COLOR, self.rect)
+            # чёрные полоски поперёк блока
+            if self.rect.w >= self.rect.h:
+                for sx in range(self.rect.left + 5, self.rect.right - 2, 12):
+                    pg.draw.rect(
+                        screen, BLACK, (sx, self.rect.top + 1, 2, self.rect.h - 2)
+                    )
+            else:
+                for sy in range(self.rect.top + 5, self.rect.bottom - 2, 12):
+                    pg.draw.rect(
+                        screen, BLACK, (self.rect.left + 1, sy, self.rect.w - 2, 2)
+                    )
+            if self.hp == 1:
+                # ПЕРЕХОДНОЕ СОСТОЯНИЕ: сеть трещин - блок держится из последних
+                # сил. Главная трещина вдоль блока плюс лучи к четырём углам.
+                cx, cy = self.rect.center
+                left, right = self.rect.left, self.rect.right
+                top, bottom = self.rect.top, self.rect.bottom
+                # главная трещина вдоль блока
+                pg.draw.line(screen, BLACK, (left + 4, cy - 2), (cx, cy + 2), 2)
+                pg.draw.line(screen, BLACK, (cx, cy + 2), (right - 4, cy - 3), 2)
+                # расходящиеся трещины к углам
+                pg.draw.line(screen, BLACK, (cx, cy), (left + 5, top + 3), 1)
+                pg.draw.line(screen, BLACK, (cx, cy), (right - 5, top + 3), 1)
+                pg.draw.line(screen, BLACK, (cx, cy), (left + 5, bottom - 3), 1)
+                pg.draw.line(screen, BLACK, (cx, cy), (right - 5, bottom - 3), 1)
+        else:
+            pg.draw.rect(screen, WALL_COLOR, self.rect)
+
+
+class Maze:
+    """Лабиринт: границы арены, стены-блоки, бреши от пуль и ремонт."""
+
+    def __init__(self, rng):
+        self.blocks = [
+            WallBlock(pg.Rect(35, 35, 8, 1010), "border"),  # левая граница
+            WallBlock(pg.Rect(35, 35, 1010, 8), "border"),  # верхняя граница
+            WallBlock(pg.Rect(35, 1037, 1010, 8), "border"),  # нижняя граница
+            WallBlock(pg.Rect(1037, 35, 8, 1010), "border"),  # правая граница
+        ]
+        self.breaches = []  # разбитые деревянные блоки - вернутся металлом
+
+        # 1. Случайный обход: связывает ВСЕ клетки в одно целое
+        linked = {(c, r): set() for c in range(CELLS_COUNT) for r in range(CELLS_COUNT)}
+        visited = {(0, 0)}
+        stack = [(0, 0)]
+        while stack:
+            c, r = stack[-1]
+            neighbours = [
+                (nc, nr)
+                for nc, nr in ((c + 1, r), (c - 1, r), (c, r + 1), (c, r - 1))
+                if 0 <= nc < CELLS_COUNT
+                and 0 <= nr < CELLS_COUNT
+                and (nc, nr) not in visited
+            ]
+            if not neighbours:
+                stack.pop()  # тупик - отходим назад и пробуем другие пути
+                continue
+            nxt = rng.choice(neighbours)
+            linked[(c, r)].add(nxt)
+            linked[nxt].add((c, r))
+            visited.add(nxt)
+            stack.append(nxt)
+
+        # 2. Петли: убираются несколько случайных стен - обходные пути
+        for _ in range(6):
+            c, r = rng.randrange(CELLS_COUNT), rng.randrange(CELLS_COUNT)
+            choices = [
+                (nc, nr)
+                for nc, nr in ((c + 1, r), (c - 1, r), (c, r + 1), (c, r - 1))
+                if 0 <= nc < CELLS_COUNT
+                and 0 <= nr < CELLS_COUNT
+                and (nc, nr) not in linked[(c, r)]
+            ]
+            if choices:
+                nxt = rng.choice(choices)
+                linked[(c, r)].add(nxt)
+                linked[nxt].add((c, r))
+
+        # 3. Ставим деревянные стены там, где клетки НЕ связаны
+        for c in range(CELLS_COUNT):
+            for r in range(CELLS_COUNT):
+                if c + 1 < CELLS_COUNT and (c + 1, r) not in linked[(c, r)]:
+                    x = FIELD_LEFT + (c + 1) * CELL_SIZE
+                    self._chop(x - 4, FIELD_TOP + r * CELL_SIZE, 8, CELL_SIZE)
+                if r + 1 < CELLS_COUNT and (c, r + 1) not in linked[(c, r)]:
+                    y = FIELD_TOP + (r + 1) * CELL_SIZE
+                    self._chop(FIELD_LEFT + c * CELL_SIZE, y - 4, CELL_SIZE, 8)
+
+    def _chop(self, x, y, w, h):
+        """Линия стены -> блоки длиной BLOCK, толщина не меняется."""
+        if w >= h:  # горизонтальная: рубим по длине
+            x0 = x
+            while x0 < x + w:
+                seg = min(BLOCK, x + w - x0)
+                self.blocks.append(WallBlock(pg.Rect(x0, y, seg, h), "wood"))
+                x0 += BLOCK
+        else:  # вертикальная: рубим по высоте
+            y0 = y
+            while y0 < y + h:
+                seg = min(BLOCK, y + h - y0)
+                self.blocks.append(WallBlock(pg.Rect(x, y0, w, seg), "wood"))
+                y0 += BLOCK
+
+    def handle_bullet(self, bullet):
+        """Пуля врезалась в блок: граница гасит пулю без разрушения,
+        дерево разбивается с одного выстрела (и уходит в бреши -
+        при ремонте вернётся металлом), металл трескается с первого
+        выстрела и разрушается со второго (и НЕ возрождается).
+        Возвращает True, если пуля погасла."""
+        for i, block in enumerate(self.blocks):
+            if bullet.rect.colliderect(block.rect):
+                destroyed = block.hit()
+                if destroyed and block.material == "wood":
+                    self.breaches.append(block)
+                    self.blocks.pop(i)
+                elif destroyed:
+                    # разбитый металл не уходит в бреши - значит не вернётся
+                    self.blocks.pop(i)
+                return True
+        return False
+
+    def repair(self):
+        """РЕМОНТ ЛАБИРИНТА: разбитые деревянные блоки возвращаются ровно
+        на свои места металлическими. Разбитый металл не восстанавливается."""
+        for block in self.breaches:
+            block.material = "metal"
+            block.hp = 2
+            self.blocks.append(block)
+        self.breaches = []
+
+    def draw(self, screen):
+        for block in self.blocks:
+            block.draw(screen)
+
+
+class Chest:
+    """Оружейный сундук: тёмно-коричневое тело с редкими досками, крышка
+    с частыми досками, золотой замок и чёрный контур."""
+
+    def __init__(self, cell):
+        self.cell = cell
+        self.x, self.y = cell_center(cell)
+
+    def move_to_random(self, rng, not_cell):
+        """Сундук перерождается в случайной клетке, кроме занятой солдатом."""
+        self.cell = random_cell(rng, not_cell=not_cell)
+        self.x, self.y = cell_center(self.cell)
+
+    @property
+    def rect(self):
+        return pg.Rect(self.x - 30, self.y - 18, 60, 44)
+
+    def draw(self, screen):
+        body = (110, 70, 35)
+        gold = (218, 165, 32)
+        cx, cy = self.x, self.y
+        # тело ящика
+        pg.draw.rect(screen, body, (cx - 30, cy - 4, 60, 30))
+        # редкие поперечные линии на теле
+        for i in range(1, 4):
+            pg.draw.rect(screen, BLACK, (cx - 30 + i * 15, cy - 4, 2, 30))
+        # крышка
+        pg.draw.rect(screen, body, (cx - 30, cy - 18, 60, 14))
+        # десяток тонких поперечных линий на крышке (зазоры между досками)
+        for i in range(1, 11):
+            pg.draw.rect(
+                screen, BLACK, (int(cx - 30 + i * 60 / 11) - 1, cy - 18, 2, 14)
+            )
+        # палочка-разделитель между крышкой и телом
+        pg.draw.rect(screen, BLACK, (cx - 30, cy - 5, 60, 4))
+        # золотой замок ближе к крышке, по центру (поверх разделителя)
+        pg.draw.rect(screen, gold, (cx - 7, cy - 6, 14, 12))
+        # чёрный контур вокруг всего сундука, толщина - как у разделителя
+        pg.draw.rect(screen, BLACK, (cx - 30, cy - 18, 60, 44), width=4)
+
+
+class ResultDB:
+    """Логи результатов в SQLite: сохранение раундов и топ-5 игроков.
+    При равенстве очков выше тот, кто набрал их раньше."""
+
+    def __init__(self, path):
+        self.path = path
+        conn = sqlite3.connect(self.path)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS results ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "nickname TEXT NOT NULL, "
+            "score INTEGER NOT NULL, "
+            "played_at TEXT NOT NULL)"
+        )
+        conn.commit()
+        conn.close()
+
+    def save(self, nickname, score):
+        """Сохраняет результат раунда и возвращает топ-5: список пар
+        (ник, очки)."""
+        conn = sqlite3.connect(self.path)
+        played_at = datetime.now().strftime("%d.%m.%Y %H:%M")
+        conn.execute(
+            "INSERT INTO results (nickname, score, played_at) VALUES (?, ?, ?)",
+            (nickname, score, played_at),
+        )
+        conn.commit()
+        top = conn.execute(
+            "SELECT nickname, score FROM results "
+            "ORDER BY score DESC, played_at ASC LIMIT 5"
+        ).fetchall()
+        conn.close()
+        return top
+
+
+def main():
+    pg.init()
+
+    screen = pg.display.set_mode((1080, 1080))
+    rng = random.Random()
+    clock = pg.time.Clock()
+    font = pg.font.Font(None, 56)
+    big_font = pg.font.Font(None, 96)
+
+    db = ResultDB(DB_FILE)  # логи результатов в SQLite
+    maze = Maze(rng)  # границы + лабиринт из блоков
+    chest = Chest(random_cell(rng, not_cell=(0, 0)))
+    soldier = Soldier(*cell_center((0, 0)))  # верхний левый угол, смотрит вправо
+    bullets = []  # летящие пули
+
+    # ВВОД НИКНЕЙМА: первый экран игры, Enter - начать раунд
+    entering_nickname = True
+    nickname = ""
+    result_top = None  # топ-5 из базы, появляется на экране результата
+    game_over = False
+    last_ticks = pg.time.get_ticks()
+    time_left = float(GAME_TIMER)  # таймер хранит дробные секунды
+
+    while True:
+        keys = pg.key.get_pressed()
+        for event in pg.event.get():
+            if event.type == pg.QUIT:
+                pg.quit()
+                return  # выход из main()
+            # после конца игры ESC тоже закрывает
+            if game_over and event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE:
+                pg.quit()
+                return
+
+            # ввод никнейма: печатаем буквы, Backspace стирает, Enter - старт
+            if entering_nickname and event.type == pg.KEYDOWN:
+                if event.key == pg.K_RETURN:
+                    entering_nickname = False
+                    if not nickname:
+                        nickname = "Игрок"  # пустой ник не оставляем
+                elif event.key == pg.K_BACKSPACE:
+                    nickname = nickname[:-1]
+                elif (
+                    event.unicode and event.unicode.isprintable() and len(nickname) < 15
+                ):
+                    nickname += event.unicode
+                continue  # пока вводим ник - стрелки и пробел не работают
+
+            if game_over:
+                continue  # в игре больше не кликаем
+
+            # ВЫСТРЕЛ: одиночный пробел, тратит патрон, пуля летит по взгляду
+            # (стрелять можно и на бегу - пробел не блокируется зажатыми стрелками)
+            if event.type == pg.KEYDOWN and event.key == pg.K_SPACE:
+                bullet = soldier.shoot()
+                if bullet:
+                    bullets.append(bullet)
+
+            # ОДИНОЧНЫЕ нажатия стрелок (без диагоналей)
+            if event.type == pg.KEYDOWN:
+                soldier.handle_tap(event, keys)
+
+        # ЭКРАН ВВОДА НИКА: игра ещё не началась, таймер стоит на месте
+        if entering_nickname:
+            screen.fill((30, 30, 50))
+            t1 = font.render("Введите имя игрока и нажми Enter:", True, (230, 230, 230))
+            t2 = big_font.render(nickname + "_", True, (240, 220, 120))
+            center_x = screen.get_width() // 2
+            screen.blit(t1, (center_x - t1.get_width() // 2, 420))
+            screen.blit(t2, (center_x - t2.get_width() // 2, 520))
+            pg.display.flip()
+            clock.tick(60)
+            continue
+
+        # ТАЙМЕР: 60 секунд, тикают вниз дробями; сундуки добавляют 1-3 секунды
+        now = pg.time.get_ticks()
+        time_left -= (now - last_ticks) / 1000
+        last_ticks = now
+        seconds_left = max(0, int(time_left))
+        if time_left <= 0 and not game_over:
+            # конец раунда: результат уходит в базу, достаём топ-5
+            game_over = True
+            result_top = db.save(nickname, soldier.score)
+
+        if game_over:
+            # ЭКРАН РЕЗУЛЬТАТА: итог игрока + топ-5 из базы
+            screen.fill((40, 40, 60))
+            t1 = big_font.render("ВРЕМЯ ВЫШЛО!", True, (240, 220, 120))
+            t2 = font.render(
+                f"{nickname} собрал сундуков: {soldier.score}", True, (240, 240, 240)
+            )
+            t3 = font.render("Нажми ESC или закрой окно", True, (180, 180, 180))
+            center_x = screen.get_width() // 2
+            screen.blit(t1, (center_x - t1.get_width() // 2, 240))
+            screen.blit(t2, (center_x - t2.get_width() // 2, 370))
+            t4 = font.render("ТОП-5 ИГРОКОВ:", True, (120, 220, 120))
+            screen.blit(t4, (center_x - t4.get_width() // 2, 470))
+            for i, (top_nick, top_score) in enumerate(result_top or [], 1):
+                # свой результат подсвечивается золотым
+                color = (240, 220, 120) if top_nick == nickname else (200, 200, 200)
+                row = font.render(f"{i}. {top_nick} - {top_score}", True, color)
+                screen.blit(row, (center_x - 150, 530 + i * 60))
+            screen.blit(t3, (center_x - t3.get_width() // 2, 920))
+            pg.display.flip()
+            clock.tick(60)
+            continue
+
+        screen.fill(FLOOR_COLOR)
+
+        # стены: границы + лабиринт + металлические блоки
+        maze.draw(screen)
+
+        # сундук
+        chest.draw(screen)
+
+        # солдат: тело, причёска, глаз, бровь, пистолет «Г»
+        soldier.draw(screen)
 
         # ПУЛИ: чёрный контур, серый шарик, чуть более светлый блик
         for bullet in bullets:
-            bx, by = int(bullet[0]), int(bullet[1])
-            pg.draw.circle(screen, (20, 20, 20), (bx, by), 8)
-            pg.draw.circle(screen, (130, 130, 130), (bx, by), 6)
-            pg.draw.circle(screen, (175, 175, 175), (bx - 2, by - 2), 3)
+            bullet.draw(screen)
 
         # Насчитывается только одиночное ЗАЖАТИЕ
-        if keys[pg.K_LEFT]:
-            player_x -= 3
-            direction = "left"
-        elif keys[pg.K_RIGHT]:
-            player_x += 3
-            direction = "right"
-        elif keys[pg.K_UP]:
-            player_y -= 3
-            direction = "up"
-        elif keys[pg.K_DOWN]:
-            player_y += 3
-            direction = "down"
+        soldier.tick(keys)
 
-        # ЖЁСТКАЯ КОЛЛИЗИЯ: круг выталкивается из каждой стены (и из
-        # металлических заплаток тоже), в которую залез.
-        for wall in walls + metal_walls:
-            near_x = max(wall.left, min(player_x, wall.right))
-            near_y = max(wall.top, min(player_y, wall.bottom))
-            push_x = player_x - near_x
-            push_y = player_y - near_y
+        # ЖЁСТКАЯ КОЛЛИЗИЯ: круг выталкивается из каждого блока (и из
+        # металлических тоже), в который залез.
+        for block in maze.blocks:
+            near_x = max(block.rect.left, min(soldier.x, block.rect.right))
+            near_y = max(block.rect.top, min(soldier.y, block.rect.bottom))
+            push_x = soldier.x - near_x
+            push_y = soldier.y - near_y
             dist_sq = push_x * push_x + push_y * push_y
             if dist_sq < R * R:
                 if dist_sq == 0:
-                    player_y = wall.top - R  # редкий случай: центр внутри стены
+                    soldier.y = block.rect.top - R  # редкий случай: центр внутри
                 else:
                     dist = dist_sq**0.5
-                    player_x = near_x + push_x / dist * R
-                    player_y = near_y + push_y / dist * R
+                    soldier.x = near_x + push_x / dist * R
+                    soldier.y = near_y + push_y / dist * R
 
-        # ПОДАЧА СУНДУКА: подобрал - очко, бонус времени, патроны, респавн
-        chest_dx = player_x - chest_x
-        chest_dy = player_y - chest_y
+        # ПОДАЧА СУНДУКА: подобрал - очко, бонус времени, патроны,
+        # лабиринт ремонтируется (бреши становятся металлом), сундук перерождается
+        chest_dx = soldier.x - chest.x
+        chest_dy = soldier.y - chest.y
         if chest_dx * chest_dx + chest_dy * chest_dy < (R + 30) * (R + 30):
-            score += 1
+            soldier.score += 1
             # бонус времени: от 1 секунды в начале раунда до 3 секунд под конец -
             # чем меньше времени осталось, тем больше прибавка
             time_bonus = 1 + 2 * (1 - time_left / GAME_TIMER)
             time_left += time_bonus
-            # каждый сундук даёт случайно от 1 до 3 патронов
-            ammo += rng.randint(1, 3)
-            # РЕМОНТ ЛАБИРИНТА: каждый разбитый блок возвращается ровно на
-            # своё место металлическим, не разрушаемым
-            metal_walls.extend(holes)
-            holes = []  # все бреши залиты
-            chest_cell = random_cell(rng, not_cell=player_cell(player_x, player_y))
-            chest_x, chest_y = cell_center(chest_cell)
+            soldier.gain_ammo()
+            soldier.speed_up()  # чуточку ускоряется - до конца игры
+            maze.repair()
+            chest.move_to_random(rng, not_cell=soldier.cell())
 
-        # ПУЛИ: летят по направлению выстрела. Попадание в кусок лабиринта
-        # выбивает дыру 90x90 (диаметр солдата 66 - проходит свободно).
-        # Первые 4 стены в списке - границы арены, они неразрушимы: пуля
-        # просто исчезает. А ещё пулей можно РАЗБИТЬ СУНДУК, без очков
+        # ПУЛИ: летят по направлению выстрела. Кусок лабиринта разбивается
+        # с одного выстрела и уходит в бреши (при подборе сундука вернётся
+        # металлом). Металл держит два выстрела: первый - трещины, второй -
+        # блок исчезает НАВСЕГДА (при ремонте не возвращается). Границы
+        # неразрушимы. Пулей можно разбить и сундук - он переродится,
+        # но очков и бонусов за разбитый сундук нет.
         for bullet in bullets:
-            bullet[0] += bullet[2] * BULLET_SPEED
-            bullet[1] += bullet[3] * BULLET_SPEED
+            bullet.update()
         alive_bullets = []
         for bullet in bullets:
-            bx, by = bullet[0], bullet[1]
-            bullet_rect = pg.Rect(bx - 4, by - 4, 8, 8)
-            dead = (
-                bullet_rect.right < 0
-                or bullet_rect.left > screen.get_width()
-                or bullet_rect.bottom < 0
-                or bullet_rect.top > screen.get_height()
-            )
-            if not dead:
-                for i, wall in enumerate(walls):
-                    if bullet_rect.colliderect(wall):
-                        dead = True
-                        if i >= 4:
-                            holes.append(wall)
-                            walls.pop(i)
-                        break
-            if not dead:
-                # металлические блоки пулей НЕ пробиваются
-                for wall in metal_walls:
-                    if bullet_rect.colliderect(wall):
-                        dead = True
-                        break
-            if not dead:
-                # разбить сундук пулей
-                chest_rect = pg.Rect(chest_x - 30, chest_y - 18, 60, 44)
-                if chest_rect.colliderect(bullet_rect):
-                    dead = True
-                    chest_cell = random_cell(
-                        rng, not_cell=player_cell(player_x, player_y)
-                    )
-                    chest_x, chest_y = cell_center(chest_cell)
-            if not dead:
-                alive_bullets.append(bullet)
+            if bullet.off_screen(screen.get_width(), screen.get_height()):
+                continue  # улетела за экран
+            if maze.handle_bullet(bullet):
+                continue  # погасилась о стену
+            if chest.rect.colliderect(bullet.rect):
+                # разбил сундук: он перерождается, но без награды
+                chest.move_to_random(rng, not_cell=soldier.cell())
+                continue
+            alive_bullets.append(bullet)
         bullets = alive_bullets
 
         # Интерфейс: патроны в левом углу, очки и время - в правом (время под очками)
-        ammo_surf = font.render(f"Патроны: {ammo}", True, (150, 60, 20))
-        score_surf = font.render(f"Очки: {score}", True, (40, 60, 120))
+        ammo_surf = font.render(f"Патроны: {soldier.ammo}", True, (150, 60, 20))
+        score_surf = font.render(f"Очки: {soldier.score}", True, (40, 60, 120))
         timer_surf = font.render(f"Время: {seconds_left}", True, (120, 40, 40))
         screen.blit(ammo_surf, (50, 40))
         screen.blit(score_surf, (screen.get_width() - score_surf.get_width() - 50, 40))
