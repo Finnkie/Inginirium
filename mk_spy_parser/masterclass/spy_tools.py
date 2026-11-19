@@ -3,7 +3,6 @@
 # python3 ../../log/generate_log.py --lines 1100000 --seed 42
 
 import os
-import shlex
 from collections import Counter
 
 
@@ -15,14 +14,26 @@ FULL_LOG = os.path.normpath(
     os.path.join(BASE_DIR, "..", "..", "log", "game_server_full.log")
 )
 
-MY_SERVER = "Рил[Мир]"  # у каждого детектива свой сервер
+MY_SERVER = "Тест[Мир]"  # у каждого детектива свой сервер
+# Рил[Мир]    Детектив#1
+# Голд[Мир]   Детектив#2
+# Просто[Мир] Детектив#3
+# Алмаз[Мир]  Детектив#4
+# Добро[Мир]  Детектив#5
+# Игро[Мир]   Детектив#6
+# Пират[Мир]  Детектив#7
+# Магия[Мир]  Детектив#8
+
+
+# ---------- РАЗБОТА СО СТРОКОЙ ----------
+# Строчка из Лога:
+# [09/May/2026:00:14:24 +0300] - Голд[Мир] - Ладоград(город) - <xX_ЖелезныйЧеловек_Xx> - "написал_в_лс" - <Тор_Тугодум> - "пригласи в группу, я танк"
 
 
 # ---------- ФИЛЬТРЫ: список строк -> список строк ----------
 
 
 def parse_file(path):
-    """cat файл — прочитать лог целиком и вернуть список строк."""
     result = []
     for line in open(path, encoding="utf-8"):
         result.append(line.strip())
@@ -30,7 +41,6 @@ def parse_file(path):
 
 
 def contain_word(input_lines, word):
-    """egrep "слово" — оставить только строки, где это слово есть."""
     result = []
     for line in input_lines:
         if word in line:
@@ -39,52 +49,11 @@ def contain_word(input_lines, word):
 
 
 def not_contain_word(input_lines, word):
-    """egrep -v "слово" — наоборот: убрать строки, где слово есть."""
     result = []
     for line in input_lines:
         if word not in line:
             result.append(line)
     return result
-
-
-# ---------- РАЗБОР ОДНОЙ СТРОКИ ----------
-
-
-def words(line):
-    """Разрезать строку по символу ' - '
-    0 — дата, 1 — сервер, 2 - локация, 3 — Игрок
-    4 — Действие, 5 - Цель (если есть), 6 — Сообщение (если есть)
-    """
-    return line.split(" - ")
-
-
-# Таким образом, если нам нужно достать Дейсвтие, пишем:
-# action = words(line)[4]
-
-
-def nickname(line):
-    # Ник игрока — слово с номером 3 (считаем с нуля!). Вместе со скобками: <ДобрыйЖук>.
-    return words(line)[3]
-
-
-def target(line):
-    # Имя цели
-    return words(line)[5]
-
-
-def action(line):
-    # Действие игрока — слово с номером 9. Кавычки снимаем: "сказал" -> сказал.
-    return words(line)[4].strip('"')
-
-
-"""
-def in_quotes(line):
-    # Достать из строки цель и сообщение (всё, что после действия).
-    # shlex.split — «умный split» из библиотеки shlex:
-    # понимает кавычки и сам убирает их.
-    tail = " ".join(words(line)[10:])
-    return shlex.split(tail)
-"""
 
 
 # ---------- ПОДСЧЁТЫ ----------
@@ -106,32 +75,8 @@ def top_targets(input_lines, top_of_how_many):
     return counter.most_common(top_of_how_many)
 
 
-def dance_then_love(lines):
-    """Найти ДВЕ строки подряд: станцевал и тут же признался_в_любви
-    (и оба раза — один и тот же игрок)."""
-    found = []
-    for i in range(len(lines) - 1):
-        this_line = lines[i]
-        next_line = lines[i + 1]
-        if (
-            action(this_line) == "станцевал"
-            and action(next_line) == "признался_в_любви"
-            and nickname(this_line) == nickname(next_line)
-        ):
-            found.append(this_line)
-            found.append(next_line)
-    return found
-
-
 def show(input_lines, limit=10):
     """Показать, что осталось после фильтров — как вывод команды в терминале."""
     for line in input_lines[:limit]:
         print("  " + line)
     print(f"Всего строк на входе (в input): {len(input_lines)}")
-
-
-def plural(count):
-    """По-русски: 1 раз, 2 раза, 3 раза (правильно для чисел от 1 до 4)."""
-    if count == 1:
-        return "раз"
-    return "раза"
