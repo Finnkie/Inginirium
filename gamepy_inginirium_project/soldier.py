@@ -23,7 +23,7 @@ def directed(player_x, player_y, direction, dx, dy, w, h):
     (w, h) - размер. Возвращает (x, y, w, h)
     на экране для текущего направления.
       right: как есть
-      left:  зеркало по вертикали через центр
+      left:  зеркально по вертикали через центр
       up:    «вправо», повёрнутый на 90 градусов против часовой стрелки
              (ширина и высота меняются местами)
       down:  «влево», повёрнутый на 90 градусов против часовой стрелки
@@ -40,7 +40,7 @@ def directed(player_x, player_y, direction, dx, dy, w, h):
 
 
 def eye_center(player_x, player_y, direction, dx, dy):
-    """Центр круглой детали (глаз) для текущего направления."""
+    """Центр глаз для текущего направления."""
     dx, dy = dx * SCALE, dy * SCALE
     if direction == "right":
         return (player_x + dx, player_y + dy)
@@ -53,7 +53,7 @@ def eye_center(player_x, player_y, direction, dx, dy):
 
 class Soldier:
     """Главный герой: позиция, направление взгляда, очки и патроны.
-    Умеет ходить (без диагоналей), стрелять и рисовать себя."""
+    Умеет ходить вниз, вверх, влево, вправо и стрелять"""
 
     SPEED = 3  # стартовая скорость: шаг за кадр
 
@@ -70,8 +70,7 @@ class Soldier:
         return player_cell(self.x, self.y)
 
     def tick(self, keys):
-        """ЗАЖАТЫЕ клавиши. elif вместо if: сработает только ПЕРВАЯ зажатая
-        клавиша из списка - диагональное движение невозможно."""
+        """Управление ЗАЖАТЫМИ клавишами"""
         if keys[pg.K_LEFT]:
             self.x -= self.speed
             self.direction = "left"
@@ -86,8 +85,7 @@ class Soldier:
             self.direction = "down"
 
     def handle_tap(self, event, keys):
-        """ОДИНОЧНОЕ нажатие стрелки: засчитывается, только если ни одна
-        кнопка движения не зажата - иначе вышел бы шаг по диагонали."""
+        """Управление ОДИНОЧНЫМ нажатием клавиш"""
         if event.key not in (pg.K_LEFT, pg.K_RIGHT, pg.K_UP, pg.K_DOWN):
             return
         something_held = (
@@ -102,18 +100,18 @@ class Soldier:
 
     def shoot(self):
         """Выстрел: тратит патрон и возвращает пулю из конца ствола.
-        Пуля появляется от КРАЯ ТЕЛА (R) - коллизия гарантирует, что стена
-        не бывает ближе R к центру, значит сквозь неё пуля не родится."""
+        Пуля появляется от КРАЯ ТЕЛА (R)"""
         if self.ammo <= 0:
             return None
         self.ammo -= 1
         vx, vy = DIRECTION_VECTORS[self.direction]
         return Bullet(self.x + vx * R, self.y + vy * R, vx, vy)
 
+    # Каждый сундук даёт случайно от 1 до 3 патронов
     def gain_ammo(self):
-        """Каждый сундук даёт случайно от 1 до 3 патронов."""
         self.ammo += random.randint(1, 3)
 
+    # и небольшое ускорение до конца игры
     def speed_boost(self):
         self.speed += 0.1
 

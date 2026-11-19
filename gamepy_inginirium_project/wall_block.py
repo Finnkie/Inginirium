@@ -1,20 +1,9 @@
-"""Один блок стены: дерево, металл или неразрушимая граница."""
-
 import pygame as pg
 
 from settings import WALL_COLOR, METAL_COLOR, BLACK
 
 
 class WallBlock:
-    """Один блок стены.
-    material "border": граница арены - неразрушима;
-    material "wood":   разбивается с одного выстрела; при ремонте
-                       лабиринта возвращается МЕТАЛЛИЧЕСКИМ;
-    material "metal":  держит ДВА выстрела (после первого покрывается
-                       трещинами); разбитый металл при ремонте
-                       НЕ возрождается - дыра остаётся навсегда.
-    """
-
     HP_BY_MATERIAL = {"wood": 1, "metal": 2}
 
     def __init__(self, rect, material):
